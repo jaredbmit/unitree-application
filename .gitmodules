@@ -1,6 +1,6 @@
-[submodule "unitree_sdk2"]
-	path = unitree_sdk2
-	url = git@github.com:unitreerobotics/unitree_sdk2.git
 [submodule "avp_teleoperate"]
 	path = avp_teleoperate
 	url = git@github.com:unitreerobotics/avp_teleoperate.git
+[submodule "unitree_sdk2_python"]
+	path = unitree_sdk2_python
+	url = git@github.com:unitreerobotics/unitree_sdk2_python.git
