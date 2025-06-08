@@ -11,21 +11,7 @@ if __name__ == "__main__":
     print("Instantiate controllers")
     arm_ctrl = G1_29_ArmController()
     arm_ik = G1_29_ArmIK()
-	
-    print("Wait for warmup")
-    time.sleep(2.5)
-
-    print("Commanding grippers")
     hand_ctrl = Dex3_1_Simple_Controller()
-    print("Command 0")
-    hand_ctrl.ctrl_dual_hand_binary(False, False)
-    time.sleep(2)
-    print("Command 1")
-    hand_ctrl.ctrl_dual_hand_binary(True, True)
-    time.sleep(5)
-    print("Command 2")
-    hand_ctrl.ctrl_dual_hand_binary(False, False)
-    time.sleep(2)
 
     # initial positon
     T_left_init = pin.SE3(
@@ -38,40 +24,42 @@ if __name__ == "__main__":
     )
 
     dt = 0.01
-    duration = 10
+    duration = 2
     n = int(duration / dt)
-    delta_translation = np.array([0.15, 0, 0.25])
+    delta_translation = np.array([0.1, 0, 0.25])
     delta_angle = - np.pi / 2
     T_left = [T_left_init for i in range(n)]
     T_right = [
         pin.SE3(
-            pin.Quaternion(np.cos(delta_angle * i / (n // 4) / 2), np.sin(delta_angle * i / (n // 4) / 2), 0, 0),
-            T_right_init.translation + delta_translation * i / (n // 4)
+            pin.Quaternion(np.cos(delta_angle * i / (n // 1) / 2), np.sin(delta_angle * i / (n // 2) / 2), 0, 0),
+            T_right_init.translation + delta_translation * i / (n // 2)
         ) 
-        for i in range(n // 4)
+        for i in range(n // 2)
     ] + [
         pin.SE3(
             pin.Quaternion(np.cos(delta_angle / 2), np.sin(delta_angle / 2), 0, 0),
-            T_right_init.translation + delta_translation - np.array([0, 0, 0.15]) * i / (n // 4)
+            T_right_init.translation + delta_translation - np.array([-0.1, 0, 0.15]) * i / (n // 2)
         )
-        for i in range(n // 4)
-    ] + [
-        pin.SE3(
-            pin.Quaternion(np.cos(delta_angle / 2), np.sin(delta_angle / 2), 0, 0),
-            T_right_init.translation + delta_translation - np.array([0, 0, 0.15])
-        )
-        for i in range(n // 4)
-    ] + [
-        pin.SE3(
-            pin.Quaternion(np.cos(delta_angle / 2), np.sin(delta_angle / 2), 0, 0),
-            T_right_init.translation + delta_translation - np.array([0, 0, 0.15]) * (1 - i / (n // 4))
-        )
-        for i in range(n // 4)
+        for i in range(n // 2)
     ]
+
+    T_left = T_left * 2
+    T_right = T_right + (T_right[::-1])[1:]
+
+    print("Wait for warmup")
+    time.sleep(2.5)
+
+    print("Command 0")
+    hand_ctrl.ctrl_dual_hand_binary(False, False)
+    time.sleep(1)
 
     print("Run trajectory")
     arm_ctrl.speed_gradual_max(t=1.0)  # Avoid jerky start
-    for i in range(n):
+    for i in range(len(T_right)):
+        if i == len(T_right) // 2:
+            hand_ctrl.ctrl_dual_hand_binary(True, True)
+            time.sleep(0.5)
+
         start_time = time.time()
 
         # get current goal pose
@@ -90,4 +78,10 @@ if __name__ == "__main__":
         time_elapsed = current_time - start_time
         sleep_time = max(0, dt - time_elapsed)
         time.sleep(sleep_time)
+    time.sleep(0.5)
 
+    print("Command 2")
+    hand_ctrl.ctrl_dual_hand_binary(False, False)
+    time.sleep(1)
+
+    print("Finished")
