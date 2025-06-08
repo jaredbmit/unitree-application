@@ -1,5 +1,12 @@
 # Unitree G1 Development Applications
 
+## Cloning
+
+After cloning, don't forget to run:
+```
+git submodule update --init --recursive
+```
+
 ## Configuration
 - Install miniforge3 on unitree (aarch64 conda equivalent)
 - Create a unitree conda environment with python 3.8
