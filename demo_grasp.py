@@ -13,6 +13,11 @@ if __name__ == "__main__":
     arm_ik = G1_29_ArmIK()
     hand_ctrl = Dex3_1_Simple_Controller()
 
+    left_q_close = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0]) * np.pi / 3
+    left_q_open = np.array([0.0, 0.0, 0.0, 0.0, 0.0, -1.1, 0.0]) * np.pi / 3
+    right_q_close = np.array([1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0]) * np.pi / 3
+    right_q_open = np.array([0.0, 0.0, 0.0, -1.1, 0.0, 0.0, 0.0]) * np.pi / 3
+
     # initial positon
     T_left_init = pin.SE3(
         pin.Quaternion(1, 0, 0, 0),
@@ -50,14 +55,14 @@ if __name__ == "__main__":
     time.sleep(2.5)
 
     print("Command 0")
-    hand_ctrl.ctrl_dual_hand_binary(False, False)
+    hand_ctrl.ctrl_dual_hand(left_q_open, right_q_open)
     time.sleep(1)
 
     print("Run trajectory")
     arm_ctrl.speed_gradual_max(t=1.0)  # Avoid jerky start
     for i in range(len(T_right)):
         if i == len(T_right) // 2:
-            hand_ctrl.ctrl_dual_hand_binary(True, True)
+            hand_ctrl.ctrl_dual_hand(left_q_close, right_q_close)
             time.sleep(0.5)
 
         start_time = time.time()
@@ -81,7 +86,7 @@ if __name__ == "__main__":
     time.sleep(0.5)
 
     print("Command 2")
-    hand_ctrl.ctrl_dual_hand_binary(False, False)
+    hand_ctrl.ctrl_dual_hand(left_q_open, right_q_open)
     time.sleep(1)
 
     print("Finished")
