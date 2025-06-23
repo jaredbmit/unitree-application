@@ -10,10 +10,10 @@ from avp_teleoperate.teleop.robot_control.robot_arm import G1_29_ArmController
 from avp_teleoperate.teleop.robot_control.robot_arm_ik import G1_29_ArmIK
 from avp_teleoperate.teleop.robot_control.robot_hand_unitree import Dex3_1_Simple_Controller
     
-left_q_close = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0]) * np.pi / 3
-left_q_open = np.array([0.0, 0.0, 0.0, 0.0, 0.0, -1.1, 0.0]) * np.pi / 3
-right_q_close = np.array([1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0]) * np.pi / 3
-right_q_open = np.array([0.0, 0.0, 0.0, -1.1, 0.0, 0.0, 0.0]) * np.pi / 3
+left_q_close = np.array([0, 0.25, 1, 1.5, 1.5, 0.4, 1.5]) * np.pi / 3
+left_q_open = np.array([0, -0.5, 0, 0, 0, -1.1, 0]) * np.pi / 3
+right_q_close = np.array([0, 0.25, 1, 0.4, 1.5, 1.5, 1.5]) * np.pi / 3
+right_q_open = np.array([0, -0.5, 0, -1.1, 0, 0, 0]) * np.pi / 3
 
 class Trajectory:
     def __init__(self):
@@ -124,110 +124,150 @@ if __name__ == "__main__":
     arm_ik = G1_29_ArmIK()
     hand_ctrl = Dex3_1_Simple_Controller()
 
+    # pre-init
+    T_left_preinit = pin.SE3(
+        pin.Quaternion(1, 0, 0, 0),
+        np.array([0.25, 0.15, 0.1]),
+    )
+    T_right_preinit = pin.SE3(
+        pin.Quaternion(1, 0, 0, 0),
+        np.array([0.25, -0.15, 0.1]),
+    )
+
     # initial positon
     T_left_init = pin.SE3(
         pin.Quaternion(1, 0, 0, 0),
-        np.array([0.25, +0.25, 0.1]),
+        np.array([0.15, 0.25, 0.1]),
     )
     T_right_init = pin.SE3(
         pin.Quaternion(1, 0, 0, 0),
-        np.array([0.25, -0.25, 0.1]),
+        np.array([0.15, -0.25, 0.1]),
     )
 
-    T_left_keypoints = [
-        T_left_init.homogeneous, 
-        T_left_init.homogeneous, 
-        T_left_init.homogeneous, 
+    # Rotations
+    left_q1 = pin.Quaternion(np.cos(np.pi / 4), np.sin(np.pi / 4), 0, 0)
+    left_q2 = pin.Quaternion(np.cos(np.pi / 16), 0, np.sin(np.pi / 16), 0)
+    left_q = left_q2 * left_q1
+    right_q1 = pin.Quaternion(np.cos(-np.pi / 4), np.sin(-np.pi / 4), 0, 0)
+    right_q2 = pin.Quaternion(np.cos(np.pi / 16), 0, np.sin(np.pi / 16), 0)
+    right_q = right_q2 * right_q1
+    
+    # Left gripper keypoints
+    T_left_prepick = pin.SE3(left_q, np.array([0.35, 0.25, 0.35]))
+    T_left_pick1 = pin.SE3(left_q, np.array([0.45, 0.25, 0.2]))
+    T_left_pick2 = pin.SE3(left_q, np.array([0.45, 0.25, 0.14]))
+    T_left_predrop = pin.SE3(left_q, np.array([0.35, 0, 0.425]))
+    T_left_drop1 = pin.SE3(left_q, np.array([0.45, 0, 0.21]))
+    T_left_drop2 = pin.SE3(left_q, np.array([0.45, 0, 0.34]))
+    T_left_keypoints_pick1 = [
         T_left_init.homogeneous,
-        T_left_init.homogeneous,
-        T_left_init.homogeneous,
-        T_left_init.homogeneous,
-        T_left_init.homogeneous,
-        T_left_init.homogeneous,
-        T_left_init.homogeneous,
-        T_left_init.homogeneous,
-        T_left_init.homogeneous,
-        T_left_init.homogeneous,
+        T_left_prepick.homogeneous,
+        T_left_pick1.homogeneous,
+        T_left_prepick.homogeneous,
+        T_left_predrop.homogeneous,
+        T_left_drop1.homogeneous,
+        T_left_predrop.homogeneous,
+        T_left_prepick.homogeneous,
         T_left_init.homogeneous,
     ]
+    T_left_keypoints_pick2 = [
+        T_left_init.homogeneous,
+        T_left_prepick.homogeneous,
+        T_left_pick2.homogeneous,
+        T_left_prepick.homogeneous,
+        T_left_predrop.homogeneous,
+        T_left_drop2.homogeneous,
+        T_left_predrop.homogeneous,
+        T_left_prepick.homogeneous,
+        T_left_init.homogeneous,
+    ]
+    T_left_keypoints = [] \
+        + [T_left_preinit.homogeneous] \
+        + [T_left_init.homogeneous] * (len(T_left_keypoints_pick1) - 2) \
+        + T_left_keypoints_pick1 \
+        + [T_left_init.homogeneous] * (len(T_left_keypoints_pick1) - 4) \
+        + T_left_keypoints_pick2 \
+        + [T_left_preinit.homogeneous] \
 
-    T_right_prepick = pin.SE3(
-        pin.Quaternion(np.cos(-np.pi / 4), np.sin(-np.pi / 4), 0, 0),
-        T_right_init.translation + np.array([0.1, 0, 0.25])
-    )
-    T_right_pick1 = pin.SE3(
-        pin.Quaternion(np.cos(-np.pi / 4), np.sin(-np.pi / 4), 0, 0),
-        T_right_init.translation + np.array([0.2, 0, 0.1])
-    )
-    T_right_pick2 = pin.SE3(
-        pin.Quaternion(np.cos(-np.pi / 4), np.sin(-np.pi / 4), 0, 0),
-        T_right_init.translation + np.array([0.2, 0, 0])
-    )
-    T_right_predrop = pin.SE3(
-        pin.Quaternion(np.cos(-np.pi / 4), np.sin(-np.pi / 4), 0, 0),
-        T_right_init.translation + np.array([0.1, 0.2, 0.25])
-    )
-    T_right_drop1 = pin.SE3(
-        pin.Quaternion(np.cos(-np.pi / 4), np.sin(-np.pi / 4), 0, 0),
-        T_right_init.translation + np.array([0.2, 0.2, 0])
-    )
-    T_right_drop2 = pin.SE3(
-        pin.Quaternion(np.cos(-np.pi / 4), np.sin(-np.pi / 4), 0, 0),
-        T_right_init.translation + np.array([0.2, 0.2, 0.1])
-    )
-    T_right_keypoints = [
+    # Right gripper keypoints
+    T_right_prepick = pin.SE3(right_q, np.array([0.35, -0.25, 0.35]))
+    T_right_pick1 = pin.SE3(right_q, np.array([0.45, -0.25, 0.20]))
+    T_right_pick2 = pin.SE3(right_q, np.array([0.45, -0.25, 0.14]))
+    T_right_predrop = pin.SE3(right_q, np.array([0.35, 0, 0.425]))
+    T_right_drop1 = pin.SE3(right_q, np.array([0.45, 0, 0.15]))
+    T_right_drop2 = pin.SE3(right_q, np.array([0.45, 0, 0.28]))
+    T_right_keypoints_pick1 = [
         T_right_init.homogeneous, 
         T_right_prepick.homogeneous, 
         T_right_pick1.homogeneous, 
         T_right_prepick.homogeneous, 
         T_right_predrop.homogeneous, 
         T_right_drop1.homogeneous, 
-        T_right_predrop.homogeneous, 
+        T_right_predrop.homogeneous,
+        T_right_prepick.homogeneous,
+        T_right_init.homogeneous,
+    ]
+    T_right_keypoints_pick2 = [
+        T_right_init.homogeneous,
         T_right_prepick.homogeneous, 
         T_right_pick2.homogeneous, 
         T_right_prepick.homogeneous, 
         T_right_predrop.homogeneous, 
         T_right_drop2.homogeneous, 
         T_right_predrop.homogeneous, 
+        T_right_prepick.homogeneous,
         T_right_init.homogeneous,
     ]
+    T_right_keypoints = [] \
+        + [T_right_preinit.homogeneous] \
+        + T_right_keypoints_pick1 \
+        + [T_right_init.homogeneous] * (len(T_right_keypoints_pick1) - 4) \
+        + T_right_keypoints_pick2 \
+        + [T_right_init.homogeneous] * (len(T_right_keypoints_pick1) - 2) \
+        + [T_right_preinit.homogeneous] \
 
-    G_left_keypoints = [
+    # Left gripper commands
+    G_left_keypoints_pick = [
         left_q_open,
         left_q_open,
-        left_q_open,
-        left_q_open,
-        left_q_open,
-        left_q_open,
-        left_q_open,
-        left_q_open,
-        left_q_open,
-        left_q_open,
+        left_q_close,
+        left_q_close,
+        left_q_close,
         left_q_open,
         left_q_open,
         left_q_open,
         left_q_open,
     ]
+    G_left_keypoints = [] \
+        + [left_q_open] \
+        + [left_q_open] * (len(G_left_keypoints_pick) - 2) \
+        + G_left_keypoints_pick \
+        + [left_q_open] * (len(G_left_keypoints_pick) - 4) \
+        + G_left_keypoints_pick \
+        + [left_q_open] \
     
-    G_right_keypoints = [
+    # Right gripper commands
+    G_right_keypoints_pick = [
         right_q_open,
         right_q_open,
         right_q_close,
         right_q_close,
         right_q_close,
         right_q_open,
-        right_q_open,
-        right_q_open,
-        right_q_close,
-        right_q_close,
-        right_q_close,
         right_q_open,
         right_q_open,
         right_q_open,
     ]
+    G_right_keypoints = [] \
+        + [right_q_open] \
+        + G_right_keypoints_pick \
+        + [right_q_open] * (len(G_right_keypoints_pick) - 4) \
+        + G_right_keypoints_pick \
+        + [right_q_open] * (len(G_right_keypoints_pick) - 2) \
+        + [right_q_open] \
 
-    segment_durations = [1.5] * (len(T_right_keypoints) - 1)
-    dt = 0.02
+    segment_durations = [1.2] * (len(T_right_keypoints) - 1)
+    dt = 0.01
 
     # Build trajectory
     traj = Trajectory()
