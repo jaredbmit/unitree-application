@@ -9,11 +9,23 @@ from typing import List
 from avp_teleoperate.teleop.robot_control.robot_arm import G1_29_ArmController
 from avp_teleoperate.teleop.robot_control.robot_arm_ik import G1_29_ArmIK
 from avp_teleoperate.teleop.robot_control.robot_hand_unitree import Dex3_1_Simple_Controller
-    
-left_q_close = np.array([0, 0.25, 1, 1.5, 1.5, 0.4, 1.5]) * np.pi / 3
-left_q_open = np.array([0, -0.5, 0, 0, 0, -1.1, 0]) * np.pi / 3
-right_q_close = np.array([0, 0.25, 1, 0.4, 1.5, 1.5, 1.5]) * np.pi / 3
-right_q_open = np.array([0, -0.5, 0, -1.1, 0, 0, 0]) * np.pi / 3
+
+# I have no idea why but the hand joint mappings seem completely different
+# depending on which unitree is being used. These were manually tested to find
+# (roughly) equivalent notions of "closing" and "opening" the gripper
+robot_id = 165
+if robot_id == 165:
+    left_q_close = np.array([0., -0.7, -0.7, 0.1, 1., -0.7, -0.7]) * np.pi / 3
+    left_q_open = np.array([0., 0.1, 0.1, -0.3, 0., 0.1, 0.1]) * np.pi / 3
+    right_q_close = np.array([0., 0.7, 0.7, 0.7, 0.7, -0.1, -1.]) * np.pi / 3
+    right_q_open = np.array([0., -0.1, -0.1, -0.1, -0.1, 0.3, 0.]) * np.pi / 3
+elif robot_id == 164:
+    left_q_close = np.array([0, 0.25, 1, 1.5, 1.5, 0.4, 1.5]) * np.pi / 3
+    left_q_open = np.array([0, -0.5, 0, 0, 0, -1.1, 0]) * np.pi / 3
+    right_q_close = np.array([0, 0.25, 1, 0.4, 1.5, 1.5, 1.5]) * np.pi / 3
+    right_q_open = np.array([0, -0.5, 0, -1.1, 0, 0, 0]) * np.pi / 3
+else:
+    raise ValueError("Specify which unitree you're using!!! (164 or 165).")
 
 class Trajectory:
     def __init__(self):
