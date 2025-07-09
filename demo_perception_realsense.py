@@ -70,7 +70,6 @@ def show_ann(ann):
     img = np.ones((ann['segmentation'].shape[0], ann['segmentation'].shape[1], 4))
     img[:,:,3] = 0
     m = ann['segmentation']
-    #masked = cv2.bitwise_and(img,img, mask=m)
     color_mask = np.array([0.0,0.0,0.0,1.0])
     img[np.invert(m)] = color_mask
     ax.imshow(img)
@@ -80,93 +79,78 @@ def get_color_diff(a, b):
     return dist
 
 def get_mean_color(array, m):
-    print("array shape:")
-    print(array.shape)
-    
     extended_mask = m[..., np.newaxis]
     extended_mask = np.repeat(extended_mask, 3, axis=2)
-    print(extended_mask.shape)
-
-    #print(array)
     masked_array = np.ma.array(array, mask=np.invert(extended_mask))
     return masked_array.mean(axis=(0,1))
+
 if __name__ == "__main__":
-    align = rs.align(rs.stream.depth)
+    pipeline = rs.pipeline()
+    config = rs.config()
+    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+    pc = rs.pointcloud()
+    points = rs.points()
+    
+    # Start streaming
+    profile = pipeline.start(config)
+    align_to = rs.stream.color
+    align = rs.align(align_to)
+
+    # Wait for a coherent pair of frames: depth and color
     frames = pipeline.wait_for_frames()
-    aligned = align.process(frames)
-    color_frame = get_color_frame(frames)
-    color_aligned_to_depth = aligned.first(rs.stream.color)
-    depth_frame = frames.first(rs.stream.depth)
+    # Align the depth frame to color frame
+    aligned_frames = align.process(frames)
+    # Get aligned frames
+    aligned_depth_frame = aligned_frames.get_depth_frame()
+    aligned_color_frame = aligned_frames.get_color_frame()
 
-   
-    #color = o3d.geometry.Image(cur_frame)
-    #depth = o3d.geometry.Image(cur_frame_depth)
-    
-    #print("currframe shape: " + str(color_frame.shape))
-    #print("depthframe shape: " + str(cur_frame_depth.shape))
-    #img = color_aligned_to_depth
-    img = cv2.cvtColor(color_frame, cv2.COLOR_BGR2RGB)
-    #cv2.imwrite('realsense_img.jpg', img)
+    points = pc.calculate(aligned_depth_frame)
 
-    #generate pointcloud
-    colorizer = rs.colorizer()
-    colorized = colorizer.process(frames)
-    ply = rs.save_to_ply("1.ply")
-    color_frame = frames.get_color_frame()
-    ply.process(frames)
-    pc = rs.pointcloud()    
-    #pc.map_to(color_aligned_to_depth)
-    #points = pc.calculate(depth_frame)
-    #print("yippie!")
-    pointcloud = o3d.io.read_point_cloud("1.ply")
-    print("read pointcloud")
-    
-    o3d.visualization.draw_geometries([pointcloud],
-                                  zoom=0.3412,
-                                  front=[0.4257, -0.2125, -0.8795],
-                                  lookat=[2.6172, 2.0475, 1.532],
-                                  up=[-0.0694, -0.9768, 0.2024])
-    input("press enter to continue..")
+    vertices = np.asanyarray(points.get_vertices(dims=2))
 
+
+    w = aligned_depth_frame.get_width()
+    image_Points = np.reshape(vertices , (-1,w,3))
+
+    depth_image = np.asanyarray(aligned_depth_frame.get_data())
+    color_image = np.asanyarray(aligned_color_frame.get_data())
+    rgb = color_image[...,::-1]
+
+    #CREATE SEGMENTATION
     sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
     sam.to(device=device)
     mask_generator = SamAutomaticMaskGenerator(sam, points_per_side=16, pred_iou_thresh=.95)
+    image = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB)
+    masks = mask_generator.generate(image)
 
-    import time
-    start = time.perf_counter()
-    masks = mask_generator.generate(img)
-    #print("Masks") 
-    #print(masks)
-    end = time.perf_counter()
-    print(f"Time: {end - start}")
-    n = 0
-    threshhold = 20
+    #SEGMENTED POINTCLOUDS
+    for i, mask in enumerate(masks):
+        plt.figure(figsize=(20, 20))
+        plt.imshow(image)
+        show_ann(mask)
+        plt.axis('off')
+        plt.savefig("test"+ str(i) + ".png")
+        #print("mask shape: " + str(mask['segmentation'].shape))
+        #print("image shape: " + str(image_Points.shape))
+        vertices_interest = image_Points[np.array(mask['segmentation']),:].reshape(-1,3)
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(vertices_interest)
+        o3d.io.write_point_cloud(str(i)+'.ply', pcd)
+    """
+    
+    #CULL SEGMENTATION
     greylist = []
-    print("Masks length:")
-    print(len(masks))
-    for mask in masks:
-        print("Mask data specs:")
-        print("Type: " + str(type(mask)))
-        print("Keys: " + str(mask.keys()))
-        print("Segmentation type: " + str(type(mask['segmentation'])))
-        print("Segmentation shape: " + str(np.shape(mask['segmentation'])))
-        print("Sample [0][0]: " + str(mask['segmentation'][0,0]))
+    for mask, n in enumerate(masks):
         plt.figure(figsize=(20, 20))
         plt.imshow(img)
         show_ann(mask)
         plt.axis('off')
         plt.savefig("test"+ str(n) + ".png")
-        print("calculated average value of segment " + str(n))
         avg_color = get_mean_color(img,mask['segmentation'])
-        print(avg_color)
-        color_dist_brown = get_color_diff(avg_color, [85,61,39])
         color_dist_grey = get_color_diff(avg_color, [59,72,56])
         if color_dist_grey < 35:
             greylist.append(n)
-        print("difference from brown: " + str(color_dist_brown))
-        print("difference from grey: " + str(color_dist_grey))
-        plt.close()
-        n = n + 1
-    print("list of grey brick segments: ")
-    print(greylist)
+        plt.close()"""
+
     pipeline.stop()
