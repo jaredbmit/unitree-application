@@ -1,3 +1,5 @@
+import os
+import sys
 import time
 import numpy as np
 import pinocchio as pin
@@ -5,6 +7,11 @@ from multiprocessing import Array, Lock
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
 from typing import List
+
+# Avoid package shadowing
+unitree_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
+if unitree_dir not in sys.path:
+    sys.path.append(unitree_dir)
 
 from avp_teleoperate.teleop.robot_control.robot_arm import G1_29_ArmController
 from avp_teleoperate.teleop.robot_control.robot_arm_ik import G1_29_ArmIK

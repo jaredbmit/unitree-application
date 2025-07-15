@@ -19,3 +19,4 @@ git submodule update --init --recursive
     - mkdir sam/checkpoints and download the sam_vit_b_01ec64.pth checkpoint into the folder
     - installing pytorch for jetson: https://docs.nvidia.com/deeplearning/frameworks/install-pytorch-jetson-platform/index.html (should be version torch-2.0.0+nv23.05)
     - installing torchvision for jetson: https://forums.developer.nvidia.com/t/install-torchvision-on-jetson-orin/220956 (should be version 0.15, installed from source)
+- Install Open3D via pip

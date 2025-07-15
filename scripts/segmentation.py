@@ -41,7 +41,7 @@ def show_anns(anns):
     ax.imshow(img)
 
 if __name__ == "__main__":
-    image = cv2.imread('sam/notebooks/images/dog.jpg')
+    image = cv2.imread('../sam/notebooks/images/dog.jpg')
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
