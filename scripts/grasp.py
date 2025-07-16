@@ -117,8 +117,6 @@ def interpolate_pose(T_now: np.ndarray, T_goal: np.ndarray, duration: float, dt:
     p_goal = T_goal[:3, 3]
 
     # Extract rotations and create Slerp object
-    rot_now = R.from_matrix(T_now[:3, :3])
-    rot_goal = R.from_matrix(T_goal[:3, :3])
     key_rots = R.from_matrix([T_now[:3, :3], T_goal[:3, :3]])
     key_times = [0, 1]
     slerp = Slerp(key_times, key_rots)

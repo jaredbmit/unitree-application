@@ -1,18 +1,12 @@
-import os
-import sys
 import numpy as np
-import pandas as pd
 import open3d as o3d
 import cv2
 import pyrealsense2 as rs
 import torch
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-import open3d
 
-# from simpleicp import PointCloud, SimpleICP
-# from simpleicp.simpleicp import SimpleICPException
-from segment_anything import SamPredictor, SamAutomaticMaskGenerator, sam_model_registry
+from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 
 #LOAD MODEL
 sam_checkpoint = "/home/unitree/drl/unitree-application/sam/checkpoints/sam_vit_b_01ec64.pth"  # sam_vit_h_4b8939.pth
