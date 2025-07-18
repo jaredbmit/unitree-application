@@ -1,6 +1,6 @@
 import time
 
-from planner import Trajectory
+from src.planner import Trajectory
 from avp_teleoperate.teleop.robot_control.robot_arm import G1_29_ArmController
 from avp_teleoperate.teleop.robot_control.robot_arm_ik import G1_29_ArmIK
 from avp_teleoperate.teleop.robot_control.robot_hand_unitree import Dex3_1_Simple_Controller

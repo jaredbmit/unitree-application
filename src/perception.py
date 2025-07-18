@@ -133,8 +133,8 @@ class Perception:
     NUM_MASKS = 5  # Number of segmentations to consider
     THRESHOLD = 1.0  # Furthest ICP correspondence
     MAX_ITER = 500  # Number of ICP iterations
-    R_HEAD_TO_CAMERA = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
-    R_WORLD_TO_HEAD = np.array([  # An assumption for ICP init
+    R_CAMERA_TO_REALSENSE = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
+    R_HEAD_TO_CAMERA = np.array([  # An assumption for ICP init
         [np.sqrt(2)/2, 0, np.sqrt(2)/2], 
         [0, 1, 0], 
         [-np.sqrt(2)/2, 0, np.sqrt(2)/2]]
@@ -153,8 +153,8 @@ class Perception:
 
         # ~Approximate~ coordinate frames for ICP init
         self.T_init = np.eye(4)
-        R_world_to_camera = self.R_WORLD_TO_HEAD @ self.R_HEAD_TO_CAMERA
-        self.T_init[:3, :3] = R_world_to_camera
+        R_head_to_realsense = self.R_HEAD_TO_CAMERA @ self.R_CAMERA_TO_REALSENSE
+        self.T_init[:3, :3] = R_head_to_realsense.T
     
     def estimate_brick_pose(self):
         """pose of brick with respect to camera frame"""
@@ -167,7 +167,7 @@ class Perception:
 
         # De-project to point clouds and run ICP
         best_score = 0.0
-        best_T = None
+        T_realsense_to_brick = None
         for i, mask in enumerate(masks):
             # De-project points
             pts = self.realsense.deproject_frame(depth_image, mask["segmentation"])
@@ -192,9 +192,14 @@ class Perception:
             score = reg.fitness / reg.inlier_rmse * len(pcd.points)
             if score > best_score:
                 best_score = score
-                best_T = reg.transformation
+                T_realsense_to_brick = reg.transformation
 
-        return best_T
+        # Transform to camera frame
+        T_camera_to_realsense = np.eye(4)
+        T_camera_to_realsense[:3, :3] = self.R_CAMERA_TO_REALSENSE
+        T_camera_to_brick = T_camera_to_realsense @ T_realsense_to_brick
+
+        return T_camera_to_brick
 
     def stop(self):
         self.realsense.stop()
