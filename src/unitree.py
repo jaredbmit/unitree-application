@@ -5,8 +5,9 @@ from src.controller import Controller
 from src.planner import Planner
 from src.perception import Perception
 
-model_path = "../unitree_ros/robots/g1_description"
-urdf_filename = "g1_29dof.urdf"
+# TODO adjust model_path to unitree
+model_path = "/home/jaredb/drl/unitree-application/avp_teleoperate/assets/g1"
+urdf_filename = "g1_body29_hand14.urdf"
 urdf_path = model_path + "/" + urdf_filename
 
 class Unitree:

@@ -7,6 +7,3 @@
 [submodule "sam"]
 	path = sam
 	url = git@github.com:facebookresearch/segment-anything.git
-[submodule "unitree_ros"]
-	path = unitree_ros
-	url = git@github.com:unitreerobotics/unitree_ros.git
