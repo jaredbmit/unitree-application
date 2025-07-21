@@ -36,3 +36,7 @@ Different unitree frames:
 - ``W`` World coordinate frame (TODO description)
 - ``B`` Brick coordinate frame (TODO description)
 - ``G`` Gripper coordinate frame (TODO description)
+
+## Known Issues
+
+- __Controller Timeout__: After initializing python controller objects, no interaction (ie other processing) for 30seconds or more is roughly the amount of time before the arm controllers completely timeout/crash. Power cycling needed to reboot controllers. This was observed on Unitree 165, mostly on the right arm. Communication? Overheating?

@@ -1,9 +1,11 @@
+import os
 import numpy as np
 import pinocchio as pin
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
 from typing import List
-
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 def interpolate_pose(T_now: np.ndarray, T_goal: np.ndarray, duration: float, dt: float):
     """
@@ -105,6 +107,22 @@ class Trajectory:
         self.G_left.append(G_left[-1])
         self.G_right.append(G_right[-1])
 
+    def plot(self, ax, downsample=10):
+        scale = 0.1
+        for i in range(len(self) // downsample):
+            j = i * downsample
+            TL = self.T_left[j]
+            TR = self.T_right[j]
+            ax.quiver(*TL[:3,3], *TL[:3,0], length=scale, color='r')
+            ax.quiver(*TL[:3,3], *TL[:3,1], length=scale, color='g')
+            ax.quiver(*TL[:3,3], *TL[:3,2], length=scale, color='b')
+            ax.quiver(*TR[:3,3], *TR[:3,0], length=scale, color='r')
+            ax.quiver(*TR[:3,3], *TR[:3,1], length=scale, color='g')
+            ax.quiver(*TR[:3,3], *TR[:3,2], length=scale, color='b')
+
+    def __len__(self):
+        return len(self.T_left)
+
     def __getitem__(self, i):
         return self.time[i], self.T_left[i], self.T_right[i], self.G_left[i], self.G_right[i]
 
@@ -115,7 +133,7 @@ class Planner:
     """
     DT = 0.01
 
-    def __init__(self, robot_id: int):
+    def __init__(self, robot_id: int, log_dir=None):
         assert robot_id in [164, 165]  # End of IP address
 
         # Gripper configuration is hardware dependent
@@ -157,8 +175,11 @@ class Planner:
         self.right_q = right_q2 * right_q1
 
         # Offsets
-        self.p_B_to_G_W = np.array([0., 0., 0.05])  # TODO tune
-        self.p_point_to_pre_W = np.array([0., 0., 0.1])  # TODO tune
+        self.p_B_to_G_W = np.array([0.03, 0., 0.04])  # TODO tune
+        self.p_point_to_pre_W = np.array([-0.06, 0., 0.2])  # TODO tune
+
+        # Logging
+        self.log_dir = log_dir
 
     def plan_init(self):
         """Initial trajectory"""
@@ -167,7 +188,7 @@ class Planner:
         T_W_to_G_right = [self.T_right_preinit.homogeneous, self.T_right_init.homogeneous]
         cmd_left = [self.cmd_open_left] * 2
         cmd_right = [self.cmd_open_right] * 2
-        segment_durations = [1.5, 1.5]
+        segment_durations = [1.5]
 
         # Build trajectory
         traj = Trajectory()
@@ -180,88 +201,118 @@ class Planner:
             self.DT,
         )
 
+        if self.log_dir is not None:
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            traj.plot(ax)
+            ax.set_aspect('equal')
+            fig.suptitle("initialization trajectory")
+            fig.savefig(os.path.join(self.log_dir, "traj_init.png"))
+
         return traj
 
-    def plan_pick_place(self, T_pick: np.ndarray, T_place: np.ndarray, side: str):
+    def plan_pick_and_place(self, T_pick: np.ndarray, T_place: np.ndarray, side: str):
         """
         T_pick and T_place are brick poses wrt world
         Planning is gripper pose wrt world
         """
-        if side == "left":
-            T_W_to_init = self.T_left_init
-            T_W_to_init_off = self.T_right_init
-            quat_W_to_G = self.left_q
-            cmd_open_side = self.cmd_open_left
-            cmd_close_side = self.cmd_close_left
-            cmd_open_off = self.cmd_open_right
-        elif side == "right":
-            T_W_to_init = self.T_right_init
-            T_W_to_init_off = self.T_left_init
-            quat_W_to_G = self.right_q
-            cmd_open_side = self.cmd_open_right
-            cmd_close_side = self.cmd_close_right
-            cmd_open_off = self.cmd_open_left
-        else:
-            raise ValueError("`side` must be either 'left' or 'right'")
+        # TODO !!
+        # Currently brick is assumed to be "aligned" with robot, rotationally
+        # Extend to arbitary brick rotations by creating a map from brick rotation to gripper rotation
 
-        # Define keypoint poses
+        # Define keypoint positions
         p_W_to_pick_W = T_pick[:3, 3] + self.p_B_to_G_W
         p_W_to_place_W = T_place[:3, 3] + self.p_B_to_G_W
         p_W_to_prepick_W = p_W_to_pick_W + self.p_point_to_pre_W
         p_W_to_preplace_W = p_W_to_place_W + self.p_point_to_pre_W
-        T_W_to_pick = pin.SE3(quat_W_to_G, p_W_to_pick_W)
-        T_W_to_place = pin.SE3(quat_W_to_G, p_W_to_place_W)
-        T_W_to_prepick = pin.SE3(quat_W_to_G, p_W_to_prepick_W)
-        T_W_to_preplace = pin.SE3(quat_W_to_G, p_W_to_preplace_W)
 
-        # Construct sequences
-        T_W_to_G_side = [
-            T_W_to_init.homogeneous,
-            T_W_to_prepick.homogeneous,
-            T_W_to_pick.homogeneous,
-            T_W_to_prepick.homogeneous,
-            T_W_to_preplace.homogeneous,
-            T_W_to_place.homogeneous,
-            T_W_to_preplace.homogeneous,
-            T_W_to_prepick.homogeneous,
-            T_W_to_init.homogeneous,
-        ]
-        cmd_side = [
-            cmd_open_side,
-            cmd_open_side,
-            cmd_close_side,
-            cmd_close_side,
-            cmd_close_side,
-            cmd_open_side,
-            cmd_open_side,
-            cmd_open_side,
-            cmd_open_side,
-        ]
-        T_W_to_G_off = [T_W_to_init_off.homogeneous] * 9
-        cmd_off = [cmd_open_off] * 9
+        if side == "left":
+            # Keypoint poses
+            T_W_to_pick = pin.SE3(self.left_q, p_W_to_pick_W)
+            T_W_to_place = pin.SE3(self.left_q, p_W_to_place_W)
+            T_W_to_prepick = pin.SE3(self.left_q, p_W_to_prepick_W)
+            T_W_to_preplace = pin.SE3(self.left_q, p_W_to_preplace_W)
+            
+            # Construct sequences
+            T_W_to_G_left = [
+                self.T_left_init.homogeneous,
+                T_W_to_prepick.homogeneous,
+                T_W_to_pick.homogeneous,
+                T_W_to_prepick.homogeneous,
+                T_W_to_preplace.homogeneous,
+                T_W_to_place.homogeneous,
+                T_W_to_preplace.homogeneous,
+                T_W_to_prepick.homogeneous,
+                self.T_left_init.homogeneous,
+            ]
+            cmd_left = [
+                self.cmd_open_left,
+                self.cmd_open_left,
+                self.cmd_close_left,
+                self.cmd_close_left,
+                self.cmd_close_left,
+                self.cmd_open_left,
+                self.cmd_open_left,
+                self.cmd_open_left,
+                self.cmd_open_left,
+            ]
+            T_W_to_G_right = [self.T_right_init.homogeneous] * 9
+            cmd_right = [self.cmd_open_right] * 9
+        elif side == "right":
+            # Keypoint poses
+            T_W_to_pick = pin.SE3(self.right_q, p_W_to_pick_W)
+            T_W_to_place = pin.SE3(self.right_q, p_W_to_place_W)
+            T_W_to_prepick = pin.SE3(self.right_q, p_W_to_prepick_W)
+            T_W_to_preplace = pin.SE3(self.right_q, p_W_to_preplace_W)
 
+            # Construct sequences
+            T_W_to_G_right = [
+                self.T_right_init.homogeneous,
+                T_W_to_prepick.homogeneous,
+                T_W_to_pick.homogeneous,
+                T_W_to_prepick.homogeneous,
+                T_W_to_preplace.homogeneous,
+                T_W_to_place.homogeneous,
+                T_W_to_preplace.homogeneous,
+                T_W_to_prepick.homogeneous,
+                self.T_right_init.homogeneous,
+            ]
+            cmd_right = [
+                self.cmd_open_right,
+                self.cmd_open_right,
+                self.cmd_close_right,
+                self.cmd_close_right,
+                self.cmd_close_right,
+                self.cmd_open_right,
+                self.cmd_open_right,
+                self.cmd_open_right,
+                self.cmd_open_right,
+            ]
+            T_W_to_G_left = [self.T_left_init.homogeneous] * 9
+            cmd_left = [self.cmd_open_left] * 9
+        else:
+            raise ValueError("`side` must be either 'left' or 'right'")
+        
         # Timing
-        segment_durations = [1.5] * (len(T_W_to_G_side) - 1)
+        segment_durations = [1.5] * 8
 
         # Build trajectory
         traj = Trajectory()
-        if side == "left":
-            T_left = T_W_to_G_side
-            T_right = T_W_to_G_off
-            cmd_left = cmd_side
-            cmd_right = cmd_off
-        elif side == "right":
-            T_left = T_W_to_G_off
-            T_right = T_W_to_G_side
-            cmd_left = cmd_off
-            cmd_right = cmd_side
         traj.build_from_keypoints(
-            T_left,
-            T_right,
+            T_W_to_G_left,
+            T_W_to_G_right,
             cmd_left,
             cmd_right,
             segment_durations,
             self.DT,
         )
+        
+        if self.log_dir is not None:
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            traj.plot(ax, downsample=30)
+            ax.set_aspect('equal')
+            fig.suptitle("pick and place trajectory")
+            fig.savefig(os.path.join(self.log_dir, "traj_pick_and_place.png"))
 
         return traj

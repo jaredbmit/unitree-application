@@ -1,3 +1,5 @@
+import os
+import time
 import numpy as np
 import cv2
 import torch
@@ -25,8 +27,8 @@ class SimpleSAM:
         sam = sam_model_registry[self.MODEL](checkpoint=self.CHECKPOINT)
         sam.to(device=self.device)
         self.mask_generator = SamAutomaticMaskGenerator(
-            model=self.sam, 
-            points_per_side=20,
+            model=sam, 
+            points_per_side=12,
             stability_score_thresh=0.9, 
             pred_iou_thresh=0.9,
         )
@@ -129,8 +131,8 @@ class Perception:
     """
     Perception pipeline for brick pose estimation
     """
-    BRICK_FILE = "../assets/brick.npy"
-    NUM_MASKS = 5  # Number of segmentations to consider
+    BRICK_FILE = os.path.expanduser("~/drl/unitree-application/assets/brick.npy")
+    NUM_MASKS = 10  # Number of segmentations to consider
     THRESHOLD = 1.0  # Furthest ICP correspondence
     MAX_ITER = 500  # Number of ICP iterations
     R_CAMERA_TO_REALSENSE = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
@@ -140,13 +142,13 @@ class Perception:
         [-np.sqrt(2)/2, 0, np.sqrt(2)/2]]
     )
 
-    def __init__(self):
+    def __init__(self, log_dir=None):
         # Init subsystems
         self.realsense = SimpleRealSense()
         self.sam = SimpleSAM()
 
         # Load brick point cloud
-        pts_brick = np.load("../assets/brick.npy")
+        pts_brick = np.load(self.BRICK_FILE)
         self.pcd_brick = o3d.geometry.PointCloud()
         self.pcd_brick.points = o3d.utility.Vector3dVector(pts_brick)
         self.pcd_brick.estimate_normals()
@@ -154,20 +156,38 @@ class Perception:
         # ~Approximate~ coordinate frames for ICP init
         self.T_init = np.eye(4)
         R_head_to_realsense = self.R_HEAD_TO_CAMERA @ self.R_CAMERA_TO_REALSENSE
-        self.T_init[:3, :3] = R_head_to_realsense.T
-    
+        self.T_init[:3, :3] = R_head_to_realsense
+
+        self.log_dir = log_dir
+
     def estimate_brick_pose(self):
         """pose of brick with respect to camera frame"""
         # Get current images
         color_image, depth_image = self.realsense.get_images()
 
         # Segment color image
+        print("Segmenting image.")
+        t_start = time.perf_counter()
         masks = self.sam.generate(color_image)
+        t_stop = time.perf_counter()
+        print(f"Segmentation completed, taking {t_stop - t_start} seconds and generating {len(masks)} masks.")
+        print(f"Only considering the top {self.NUM_MASKS} masks, ranked by estimated quality.")
         masks = masks[:self.NUM_MASKS]
 
+        if self.log_dir is not None:
+            fig, ax = plt.subplots(1)
+            ax.imshow(color_image)
+            self.sam.show_anns(masks, ax)
+            fig.suptitle(f"Top {self.NUM_MASKS} annotations")
+            fig.savefig(os.path.join(self.log_dir, "segmentation.png"))
+
         # De-project to point clouds and run ICP
+        print("Computing best ICP match.")
+        t_start = time.perf_counter()
         best_score = 0.0
-        T_realsense_to_brick = None
+        best_pcd = None
+        T_brick_to_realsense = None
+        point_clouds = []
         for i, mask in enumerate(masks):
             # De-project points
             pts = self.realsense.deproject_frame(depth_image, mask["segmentation"])
@@ -177,6 +197,7 @@ class Perception:
             pcd.points = o3d.utility.Vector3dVector(pts)
             pcd = pcd.voxel_down_sample(voxel_size=0.002)
             pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
+            point_clouds.append(pcd)
 
             # Compute ICP registration
             pcd.estimate_normals()
@@ -192,14 +213,41 @@ class Perception:
             score = reg.fitness / reg.inlier_rmse * len(pcd.points)
             if score > best_score:
                 best_score = score
-                T_realsense_to_brick = reg.transformation
+                best_pcd = pcd
+                T_brick_to_realsense = reg.transformation
+        
+        t_stop = time.perf_counter()
+        print(f"ICP matching completed, taking {t_stop - t_start} seconds and matching {len(masks)} point clouds.")
+
+        if T_brick_to_realsense is None or not isinstance(T_brick_to_realsense, np.ndarray):
+            raise RuntimeError("ICP failed to find a valid match among the segmented point clouds.")
 
         # Transform to camera frame
+        T_realsense_to_brick = np.linalg.inv(T_brick_to_realsense)
         T_camera_to_realsense = np.eye(4)
         T_camera_to_realsense[:3, :3] = self.R_CAMERA_TO_REALSENSE
         T_camera_to_brick = T_camera_to_realsense @ T_realsense_to_brick
+
+        if self.log_dir is not None:
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            for pcd in point_clouds:
+                points = np.asarray(pcd.points)
+                ax.scatter(points[:, 0], points[:, 1], points[:, 2], s=1, color='dodgerblue')
+            points = np.asarray(best_pcd.points)
+            ax.scatter(points[:, 0], points[:, 1], points[:, 2], s=1, color='lightgreen')
+            ax.set_aspect("equal")
+            fig.savefig(os.path.join(self.log_dir, "projections.png"))
+
+        print(f"ICP match found. Estimated brick pose wrt D435 camera frame: {T_camera_to_brick}")
 
         return T_camera_to_brick
 
     def stop(self):
         self.realsense.stop()
+
+
+if __name__ == "__main__":
+    perception = Perception()
+    T_camera_to_brick = perception.estimate_brick_pose()
+    perception.stop()
