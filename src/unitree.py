@@ -36,8 +36,7 @@ class Unitree:
         
         # Initialize subsystems
         self.perception = Perception(self.log_dir)
-        self.planner = Planner(robot_id)
-        # self.planner = Planner(robot_id, self.log_dir)
+        self.planner = Planner(robot_id, self.log_dir)
         self.controller = Controller()
         print("Waiting for controller warm-up.")
         time.sleep(2)
@@ -91,6 +90,11 @@ class Unitree:
 
         # Plan trajectory
         print("Planning trajectory.")
+        print("T_pick:")
+        print(str(T_world_to_brick))
+        print("T_place:")
+        print(str(T_place))
+        
         if T_world_to_brick[1, 3] > 0:  # LHS or RHS
             side = "left"
             T_place[1, 3] += -0.05

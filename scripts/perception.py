@@ -161,7 +161,7 @@ if __name__ == "__main__":
         plt.close()
 
     # Run ICP on point clouds
-    pts_brick = np.load("../assets/brick.npy")
+    pts_brick = np.load("../assets/Brick_Small.npy")
     pcd_brick = o3d.geometry.PointCloud()
     pcd_brick.points = o3d.utility.Vector3dVector(pts_brick)
     pcd_brick.estimate_normals()

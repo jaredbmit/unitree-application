@@ -106,6 +106,42 @@ class Trajectory:
         self.T_right.append(T_right[-1])
         self.G_left.append(G_left[-1])
         self.G_right.append(G_right[-1])
+    
+    def build_from_keypoints_debug(
+        self,
+        T_left: List[np.ndarray],
+        T_right: List[np.ndarray],
+        G_left: List[np.ndarray],
+        G_right: List[np.ndarray],
+        segment_durations: List[float],
+        dt: float
+    ):
+        """Interpolates trajectory from keyframes. ZOH for gripper."""
+        assert len(T_left) == len(T_right) == len(G_left) == len(G_right) == len(segment_durations) + 1
+        t = 0
+        self.time = []
+        self.T_left = []
+        self.T_right = []
+        self.G_left = []
+        self.G_right = []
+
+        for i in range(len(T_right) - 1):
+            duration_per_segment = segment_durations[i]
+            segment_T_left, segment_time = interpolate_pose(T_left[i], T_left[i+1], duration_per_segment, dt)
+            segment_T_right, _ = interpolate_pose(T_right[i], T_right[i+1], duration_per_segment, dt)
+
+            self.time += [-1.0] + [t + st for st in segment_time][1:]
+            self.T_left += segment_T_left
+            self.T_right += segment_T_right
+            self.G_left += [G_left[i]] * len(segment_T_left)
+            self.G_right += [G_right[i]] * len(segment_T_right)
+
+            t = self.time[-1]
+
+        self.time.append(sum(segment_durations))
+        print("======= PLANNED TRAJECTORY =======")
+        for t in range(len(T_right) - 1):
+            print(str(self.time[t]) + " pose: " + str(T_left[t][0]))
 
     def plot(self, ax, downsample=10):
         scale = 0.1
@@ -298,7 +334,7 @@ class Planner:
 
         # Build trajectory
         traj = Trajectory()
-        traj.build_from_keypoints(
+        traj.build_from_keypoints_debug(
             T_W_to_G_left,
             T_W_to_G_right,
             cmd_left,
@@ -316,3 +352,9 @@ class Planner:
             fig.savefig(os.path.join(self.log_dir, "traj_pick_and_place.png"))
 
         return traj
+
+if __name__ == "__main__":
+    planner = Planner(robot_id = 165)
+    T_pick  = np.array([[0.99, 0.07, -0.14, 0.41],[-0.08, 0.99, -0.05, 0.02],[0.13, 0.06, 0.98, 0.02],[0, 0, 0, 1]])
+    T_place = np.array([[0.99, 0.07, -0.14, 0.52],[-0.08, 0.99, -0.05, 0.00],[0.13, 0.06, 0.98, 0.15],[0, 0, 0, 1]])
+    planner.plan_pick_and_place(T_pick,T_place,"left")

@@ -98,7 +98,7 @@ class SimpleRealSense:
 
         return color_image, depth_image
     
-    def deproject_frame(self, depth, mask):
+    def deproject_frame(self, depth, color, mask):
         """depth and mask are both arrays"""
         if self.intrinsics is None:
             raise RuntimeError("method `get_images` must be called at least once to calibrate `intrinsics`")
@@ -106,6 +106,8 @@ class SimpleRealSense:
         # Mask
         mask_2d = mask.astype(bool)
         h, w = depth.shape
+        #print("depth shape: " + str(depth.shape))
+        #print("color shape: " + str(color.shape))
         Y, X = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
         xs = X[mask_2d]
         ys = Y[mask_2d]
@@ -114,14 +116,16 @@ class SimpleRealSense:
         # Filter invalid measurements
         valid = zs > 0
         xs, ys, zs = xs[valid], ys[valid], zs[valid]
+        pts = []
+        colors = []
+        #print("xs shape: "+ str(xs.shape))
 
         # Deproject one at a time
-        pts = [
-            rs.rs2_deproject_pixel_to_point(self.intrinsics, [float(x), float(y)], z)
-            for x, y, z in zip(xs, ys, zs)
-        ]
-
-        return np.array(pts)
+        for point in zip(xs, ys, zs):
+            pts += [rs.rs2_deproject_pixel_to_point(self.intrinsics, [float(point[0]), float(point[1])], point[2])]
+            curr_color = color[point[1],point[0]]
+            colors += [curr_color]
+        return np.array(pts), np.array(colors)
 
     def stop(self):
         self.pipeline.stop()
@@ -131,7 +135,7 @@ class Perception:
     """
     Perception pipeline for brick pose estimation
     """
-    BRICK_FILE = os.path.expanduser("~/drl/unitree-application/assets/brick.npy")
+    BRICK_FILE = os.path.expanduser("~/drl/unitree-application/assets/Brick_Small.npy")
     NUM_MASKS = 10  # Number of segmentations to consider
     THRESHOLD = 1.0  # Furthest ICP correspondence
     MAX_ITER = 500  # Number of ICP iterations
@@ -190,11 +194,13 @@ class Perception:
         point_clouds = []
         for i, mask in enumerate(masks):
             # De-project points
-            pts = self.realsense.deproject_frame(depth_image, mask["segmentation"])
+            pts, colors = self.realsense.deproject_frame(depth_image, color_image, mask["segmentation"])
 
             # Downsample and reject outliers
             pcd = o3d.geometry.PointCloud()
             pcd.points = o3d.utility.Vector3dVector(pts)
+            pcd.colors = o3d.utility.Vector3dVector(colors)
+
             pcd = pcd.voxel_down_sample(voxel_size=0.002)
             pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
             point_clouds.append(pcd)
@@ -231,13 +237,19 @@ class Perception:
         if self.log_dir is not None:
             fig = plt.figure()
             ax = fig.add_subplot(111, projection='3d')
+            
             for pcd in point_clouds:
                 points = np.asarray(pcd.points)
-                ax.scatter(points[:, 0], points[:, 1], points[:, 2], s=1, color='dodgerblue')
+                colors = np.asarray(pcd.colors)
+                colors = np.divide(colors.astype(np.float32),255)
+                #print("color example: " + str(colors[0]))
+                ax.scatter(points[:, 0], points[:, 1], points[:, 2], s=1, color=colors)
+
             points = np.asarray(best_pcd.points)
             ax.scatter(points[:, 0], points[:, 1], points[:, 2], s=1, color='lightgreen')
             ax.set_aspect("equal")
             fig.savefig(os.path.join(self.log_dir, "projections.png"))
+            plt.show()
 
         print(f"ICP match found. Estimated brick pose wrt D435 camera frame: {T_camera_to_brick}")
 
@@ -248,6 +260,6 @@ class Perception:
 
 
 if __name__ == "__main__":
-    perception = Perception()
+    perception = Perception(log_dir="../log")
     T_camera_to_brick = perception.estimate_brick_pose()
     perception.stop()

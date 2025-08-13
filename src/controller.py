@@ -52,6 +52,8 @@ class Controller:
             current_time = time.time()
             time_elapsed = current_time - start_time
             sleep_time = max(0, self.DT - time_elapsed)
+            if(t == -1):
+                input("hit breakpoint, press enter to continue")
             time.sleep(sleep_time)
 
 
