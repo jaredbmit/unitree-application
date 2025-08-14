@@ -104,8 +104,11 @@ class SimpleRealSense:
             raise RuntimeError("method `get_images` must be called at least once to calibrate `intrinsics`")
         
         # Mask
-        mask_2d = mask.astype(bool)
         h, w = depth.shape
+        if mask is None:
+            mask_2d = np.ones(h,w).astype(bool)
+        else:
+            mask_2d = mask.astype(bool)
         #print("depth shape: " + str(depth.shape))
         #print("color shape: " + str(color.shape))
         Y, X = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
@@ -164,6 +167,13 @@ class Perception:
 
         self.log_dir = log_dir
 
+    def get_color_pointcloud(self):
+        
+        color_image, depth_image = self.realsense.get_images()
+        points, colors = self.realsense.deproject_frame(depth_image, color_image) 
+        
+        return points, colors
+        
     def estimate_brick_pose(self):
         """pose of brick with respect to camera frame"""
         # Get current images
