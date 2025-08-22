@@ -11,9 +11,9 @@ from src.unitree import Unitree
 robot_id = 165
 unitree = Unitree(robot_id)
 unitree.move_home()
-p_place = np.array([0.52, 0., 0.075])
+p_place = np.array([0.52, 0., 0.055])
 unitree.pick_and_place(p_place)
-p_place = np.array([0.52, 0., 0.15])
+p_place = np.array([0.52, 0., 0.055])
 unitree.pick_and_place(p_place)
 unitree.stop()
 
