@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 
-
 class SimpleSAM:
     """
     Simple wrapper interface for segment-anything
@@ -148,6 +147,7 @@ class Perception:
     Perception pipeline for brick pose estimation
     """
     BRICK_FILE = os.path.expanduser("~/drl/unitree-application/assets/Brick_Small.npy")
+    ANGLE_THRESHOLD = 1
     NUM_MASKS = 10  # Number of segmentations to consider
     THRESHOLD = 1.0  # Furthest ICP correspondence
     MAX_ITER = 500  # Number of ICP iterations
@@ -276,7 +276,7 @@ class Perception:
             pcd.estimate_normals()
             reg = o3d.pipelines.registration.registration_icp(
                 pcd, self.pcd_brick, self.THRESHOLD, self.T_init,
-                o3d.pipelines.registration.TransformationEstimationPointToPlane(),
+                o3d.pipelines.registration.TransformationEstimationPointToPoint(),
                 o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=self.MAX_ITER),
             )
 
@@ -322,7 +322,7 @@ class Perception:
 
         return T_camera_to_brick
 
-    def estimate_brick_pose_debug(self):
+    def estimate_brick_pose_debug(self, log = False):
         """pose of brick with respect to camera frame"""
         # Get current images
         color_image, depth_image = self.realsense.get_images()
@@ -358,11 +358,42 @@ class Perception:
 
             # Compute ICP registration
             pcd.estimate_normals()
-            reg = o3d.pipelines.registration.registration_icp(
+            reg1 = o3d.pipelines.registration.registration_icp(
                 pcd, self.pcd_brick, self.THRESHOLD, self.T_init,
                 o3d.pipelines.registration.TransformationEstimationPointToPlane(),
                 o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=self.MAX_ITER),
             )
+            reg2 = o3d.pipelines.registration.registration_icp(
+                pcd, self.pcd_brick, self.THRESHOLD, self.T_init,
+                o3d.pipelines.registration.TransformationEstimationPointToPlane(),
+                o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=self.MAX_ITER),
+            )
+            reg1_t = np.transpose(reg1.transformation[0:3,0:3])
+            r_diff = reg1_t @ reg2.transformation[0:3,0:3]
+            angle1 = np.abs(np.arccos((np.trace(r_diff) - 1)/2))    
+            if angle1 < self.ANGLE_THRESHOLD:
+                reg = reg2
+            else:
+                print("ICP difference larger than threshold, doing additional round..")
+                reg3 = o3d.pipelines.registration.registration_icp(
+                pcd, self.pcd_brick, self.THRESHOLD, self.T_init,
+                o3d.pipelines.registration.TransformationEstimationPointToPlane(),
+                o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=self.MAX_ITER),
+            )   
+                reg2_t = np.transpose(reg2.transformation[0:3,0:3])
+                r_diff2 = reg2_t @ reg3.transformation[0:3,0:3]
+                angle2 = np.abs(np.arccos((np.trace(r_diff2) - 1)/2))
+                
+                reg3_t = np.transpose(reg3.transformation[0:3,0:3])
+                r_diff3 = reg3_t @ reg1.transformation[0:3,0:3]
+                angle3 = np.abs(np.arccos((np.trace(r_diff3) - 1)/2))
+                
+                angles = [angle1, angle2, angle3]
+                if (angles.index(min(angles)) == 0):
+                    reg = reg1
+                else: 
+                    reg = reg3 
+            
 
             # Heuristic
             if reg.fitness == 0. or reg.inlier_rmse == 0.:
@@ -463,6 +494,17 @@ class Perception:
         colors = np.asarray(pcd.colors)
         colors = np.divide(colors.astype(np.float32),255)
         ax1.set_clip_on(False)
+        
+        azm = -216.8
+        ele = -16.75
+        xlm = [0.418,0.822]
+        ylm = [-0.143, 0.120]
+        zlm = [-0.08, 0.164]
+        ax1.view_init(elev=ele, azim=azm) #Reproduce view
+        ax1.set_xlim3d(xlm[0],xlm[1])     #Reproduce magnification
+        ax1.set_ylim3d(ylm[0],ylm[1])     #...
+        ax1.set_zlim3d(zlm[0],zlm[1])
+        
         ax1.set_axis_off()
         ax1.scatter(points[:, 0], points[:, 1], points[:, 2], s=1, color=colors)
         ax1.set_aspect("equal")
@@ -490,8 +532,18 @@ class Perception:
         #plot_axis(transformed_z, ax1, 'blue')
        
     
+        if log == False:    
+            plt.show()
+            xlm=ax1.get_xlim3d() #These are two tupples
+            ylm=ax1.get_ylim3d() #we use them in the next
+            zlm=ax1.get_zlim3d() #graph to reproduce the magnification from mousing
+            azm=ax1.azim
+            ele=ax1.elev
+            print(str(xlm) + " " + str(ylm) + " " + str(zlm) + " " + str(azm) + " " + str(ele))
+        else:
+            filename = str(np.random.randint(999999)) + ".png"
+            plt.savefig(os.path.join(self.log_dir, filename))
             
-        plt.show()
 
         print(f"ICP match found. Estimated brick pose wrt D435 camera frame: {T_camera_to_brick}")
 
@@ -503,6 +555,10 @@ class Perception:
 
 if __name__ == "__main__":
     perception = Perception(log_dir="../log")
-    T_brick_to_world = perception.estimate_brick_pose_debug()
+    for i in range(50):
+        t_start = time.perf_counter()
+        T_brick_to_world = perception.estimate_brick_pose_debug(log = True)
+        t_stop = time.perf_counter()
+        print(f"Total perception run took {t_stop - t_start} seconds")
 
     perception.stop()
