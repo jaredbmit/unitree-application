@@ -11,6 +11,7 @@ from src.unitree import Unitree
 
 app = Flask(__name__)
 
+pos_array = ([[0,1,1],[0,1,1],[0,1,1],[0,1,1],[0,1,1],[0,1,1],[0.600,0.05,0.08],[0.600,-0.05,0.08],[0.600,-0.15,0.08]])
 
 @app.route('/')
 def index():
@@ -22,11 +23,20 @@ def index():
 @app.route('/server_process_layout/', methods=['POST'])  
 def server_process_layout():
   #The part that handles request
-  print ('server side --- great success!')
   data = request.get_json()
   print("data: " + str(data))
-  p_place = np.array([0.52, 0., 0.075])
-  unitree.pick_and_place(p_place)
+  print("running..")
+  print("len(data): " + str(len(data)))
+  data = data["brick_values"]
+  for i in range(len(data) - 1):
+      print("i === " + str(i))
+      print("brick color: " + str(data[len(data) - 1 -i]))
+      if data[len(data) - 1 - i] == 2:
+          print("grabbing red brick..")
+          unitree.place_color('r',pos_array[i])
+      elif data[len(data) - 1 - i] == 1:
+          print("grabbing grey brick..")
+          unitree.place_color('g', pos_array[i]) 
   return 'trajectory completed successfully'
 
 if __name__ == '__main__':
@@ -34,7 +44,6 @@ if __name__ == '__main__':
   robot_id = 165
   unitree = Unitree(robot_id)
   unitree.move_home()
-  print("made it to here!")
   app.run(use_reloader=False, host="0.0.0.0")
 
 unitree.stop()
