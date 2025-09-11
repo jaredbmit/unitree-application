@@ -1,11 +1,11 @@
-import time
 import os
 import numpy as np
 import cv2
+import time
 from datetime import datetime
 from unitree_sdk2py.core.channel import ChannelSubscriber, ChannelFactoryInitialize
-from cam_data import Image_
-from unitree_sdk2py.idl.std_msgs.msg.dds_ import Header_
+from cam_data import ImageChunk_
+
 
 def decode_image_message(image_msg):
     """
@@ -47,6 +47,7 @@ def decode_image_message(image_msg):
     
     return image_array
 
+
 def save_image(image_array, encoding, frame_id, timestamp, save_dir):
     """
     Save image array to file
@@ -61,7 +62,7 @@ def save_image(image_array, encoding, frame_id, timestamp, save_dir):
     # Create timestamp string for filename
     dt = datetime.fromtimestamp(timestamp.sec + timestamp.nanosec / 1e9)
     timestamp_str = dt.strftime("%Y%m%d_%H%M%S_%f")[:-3]  # milliseconds
-    
+
     # Determine file extension and processing based on encoding
     if encoding in [1, 2]:  # RGB8, BGR8
         if encoding == 1:  # RGB8
@@ -93,40 +94,33 @@ def save_image(image_array, encoding, frame_id, timestamp, save_dir):
     
     print(f"Saved image: {filename}")
 
+
 if __name__ == "__main__":
-    # Initialize channel factory
-    ChannelFactoryInitialize()
-    
     # Create save directory
     save_directory = "saved_images"
     os.makedirs(save_directory, exist_ok=True)
     
+    # Initialize channel factory
     # Create subscriber for image messages
-    # Replace "image_topic" with your actual topic name
-    sub = ChannelSubscriber("image_topic", Image_)
+    ChannelFactoryInitialize()
+    sub = ChannelSubscriber("image_topic", ImageChunk_)
     sub.Init()
-    
     print(f"Subscriber initialized. Saving images to: {save_directory}")
-    print("Press Ctrl+C to stop...")
     
-    try:
-        while True:
-            msg = sub.Read()
-            if msg is not None:
-                print(f"Received image: {msg.width}x{msg.height}, encoding: {msg.encoding}, frame: {msg.header.frame_id}")
-                
-                # Decode image message
-                image_array = decode_image_message(msg)
-                
-                # Save image
-                save_image(image_array, msg.encoding, msg.header.frame_id, msg.header.stamp, save_directory)
-                
-            else:
-                print("No data subscribed.")
-                time.sleep(0.01)  # Small delay to prevent busy waiting
-                
-    except KeyboardInterrupt:
-        print("\nShutting down subscriber...")
-    finally:
-        sub.Close()
-        print("Subscriber closed.")
+    chunks_received = {}
+    total_chunks = None
+
+    while True:
+        msg = sub.Read()
+        if msg is not None:
+            print(f"Received chunk {msg.chunk_index+1}/{msg.num_chunks}")
+            chunks_received[msg.chunk_index] = np.array(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, msg.depth)
+            total_chunks = msg.num_chunks
+
+            # Check if we have all chunks
+            if total_chunks is not None and len(chunks_received) == total_chunks:
+                full_image = np.concat([chunks_received[i] for i in range(total_chunks)], axis=0)
+                print(f"Reassembled full image: {full_image.shape}")
+                chunks_received = {}
+        else:
+            time.sleep(0.1)
